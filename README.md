@@ -42,3 +42,49 @@ rm -rf lpips-pytorch
 # 6. [重要] 修復 Basicsr 與 Torchvision 版本不相容問題
 # 這行指令會自動修正虛擬環境中 basicsr 的錯誤引用
 sed -i 's/from torchvision.transforms.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/' $(python -c "import basicsr; import os; print(os.path.dirname(basicsr.__file__))")/data/degradations.py
+
+## 2. 資料集準備 (Data Preparation)
+本專案使用 UIEB (Underwater Image Enhancement Benchmark) 資料集。
+
+請執行以下指令，自動從 Hugging Face 下載並切分資料集：
+# 1. 建立資料夾
+mkdir -p datasets
+cd datasets
+
+# 2. 下載資料集 (需安裝 git-lfs)
+# 若未安裝: apt-get update && apt-get install git-lfs -y && git lfs install
+git clone [https://huggingface.co/datasets/Edddddd8787/temp-weights](https://huggingface.co/datasets/Edddddd8787/temp-weights) underwater_train
+
+# 3. 整理資料夾結構 (改名 + 刪除 .git)
+cd underwater_train
+rm -rf .git
+mv raw-890 underwater
+mv reference-890 GT
+cd ../..
+
+# 4. 自動切分訓練集與測試集 (800 Train / 90 Test)
+python split_dataset.py
+
+完成後的結構應如下：
+datasets/
+├── underwater_train/ (800 pairs for training)
+│   ├── GT/
+│   └── underwater/
+└── underwater_test/  (90 pairs for evaluation)
+    ├── GT/
+    └── underwater/
+
+## 3. 下載預訓練權重 (Pretrained Weights)
+FlowIE 需要 Stable Diffusion v2.1 作為底層模型，以及 SwinIR 作為初始特徵提取器。
+# 1. 確保 weights 資料夾存在
+mkdir -p weights
+
+# 2. Stable Diffusion v2.1 Base (~5.2GB)
+wget -O weights/v2-1_512-ema-pruned.ckpt [https://huggingface.co/camenduru/unianimate/resolve/main/v2-1_512-ema-pruned.ckpt](https://huggingface.co/camenduru/unianimate/resolve/main/v2-1_512-ema-pruned.ckpt)
+
+# 3. SwinIR Initial Module (~60MB)
+wget -O weights/general_swinir_v1.ckpt [https://huggingface.co/lxq007/DiffBIR/resolve/main/general_swinir_v1.ckpt](https://huggingface.co/lxq007/DiffBIR/resolve/main/general_swinir_v1.ckpt)
+
+## 4. 訓練 (Training)
+執行以下指令開始訓練。設定檔已針對 24GB VRAM 優化（Batch Size=1, Gradient Accumulation=4）。=
+python train.py --config ./configs/train_cldm_underwater.yaml
