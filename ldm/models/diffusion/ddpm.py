@@ -209,7 +209,7 @@ class DDPM(pl.LightningModule, ImageLoggerMixin):
 
     @torch.no_grad()
     def init_from_ckpt(self, path, ignore_keys=list(), only_model=False):
-        sd = torch.load(path, map_location="cpu")
+        sd = torch.load(path, map_location="cpu", weights_only=False)
         if "state_dict" in list(sd.keys()):
             sd = sd["state_dict"]
         keys = list(sd.keys())
@@ -218,6 +218,14 @@ class DDPM(pl.LightningModule, ImageLoggerMixin):
                 if k.startswith(ik):
                     print("Deleting key {} from state_dict.".format(k))
                     del sd[k]
+        # FIX: Auto-reshape 2D weights to 4D for SD 2.1 compatibility
+        for name, param in self.named_parameters():
+            if name in sd:
+                if len(param.shape) == 4 and len(sd[name].shape) == 2:
+                    if param.shape[:2] == sd[name].shape:
+                        print(f"Auto-reshaping {name} from {sd[name].shape} to {param.shape}")
+                        sd[name] = sd[name].unsqueeze(-1).unsqueeze(-1)
+
         if self.make_it_fit:
             n_params = len([name for name, _ in
                             itertools.chain(self.named_parameters(),
@@ -1542,7 +1550,7 @@ class LatentFinetuneDiffusion(LatentDiffusion):
             self.init_from_ckpt(ckpt_path, ignore_keys)
 
     def init_from_ckpt(self, path, ignore_keys=list(), only_model=False):
-        sd = torch.load(path, map_location="cpu")
+        sd = torch.load(path, map_location="cpu", weights_only=False)
         if "state_dict" in list(sd.keys()):
             sd = sd["state_dict"]
         keys = list(sd.keys())

@@ -1,19 +1,49 @@
---extra-index-url https://download.pytorch.org/whl/cu116
-torch==1.13.1+cu116
-torchvision==0.14.1+cu116
-xformers==0.0.16
-pytorch_lightning==1.4.2\
-einops
-open-clip-torch==2.24.0
-omegaconf
+# --- 核心基礎庫 ---
+# 限制 numpy 版本以避免與舊版 PyTorch/TensorFlow 衝突
+numpy<2.0.0
+
+# --- 深度學習框架 (建議搭配 PyTorch 1.13.1 或 2.0+) ---
+# 如果您是在 Colab 或新環境，PyTorch 通常已預裝，這裡僅作版本參考
+# torch>=1.13.1
+# torchvision>=0.14.1
+
+# --- FlowIE 關鍵修復依賴 (解決報錯的核心) ---
+# 必須 >= 0.21.0 才能支援 AutoencoderTiny
+diffusers>=0.24.0
+
+# 必須更新以避免 huggingface_hub 的 HfFolder 錯誤
+transformers>=4.30.0
+huggingface_hub>=0.16.0
+
+# 強烈建議安裝，解決 model loading 警告並加速
+accelerate>=0.21.0
+
+# --- 訓練框架 (維持舊版以相容 FlowIE 原始碼) ---
+# FlowIE 的 DataModule 寫法依賴舊版 PL，升級會導致屬性找不到
+pytorch-lightning==1.4.2
+# 配合舊版 PL 的 metrics
 torchmetrics==0.6.0
-triton==2.0.0
-lora-diffusion==0.1.7
+
+# --- 必要的圖像處理與工具庫 ---
+einops
+omegaconf
+open-clip-torch==2.24.0
 opencv-python-headless
 scipy
 matplotlib
+pillow
+imageio
+ftfy
+regex
+kornia
+basicsr
+timm
 lpips
-gradio
+
+# --- 可選套件 ---
 chardet
-transformers
-facexlib
+# gradio       # 如果需要網頁介面才開
+# xformers     # 如果是 NVIDIA 顯卡，強烈建議安裝以大幅加速 (pip install xformers)
+
+# --- 必須從 GitHub 安裝的套件 ---
+git+https://github.com/cloneofsimo/lora.git

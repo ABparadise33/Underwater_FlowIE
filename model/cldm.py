@@ -315,7 +315,25 @@ class ControlLDM(LatentDiffusion):
         self.output = output
         os.makedirs(self.output,exist_ok=True)
         # instantiate preprocess module (SwinIR)
+        # FIX: Extract ckpt_path and load manually to avoid __init__ error
+        swinir_ckpt = None
+        if 'params' in preprocess_config and 'ckpt_path' in preprocess_config['params']:
+            swinir_ckpt = preprocess_config['params'].pop('ckpt_path')
+        
+        # Original instantiation
         self.preprocess_model = instantiate_from_config(preprocess_config)
+        
+        # Load weights if path provided
+        if swinir_ckpt is not None:
+            print(f'Loading SwinIR weights from {swinir_ckpt}')
+            try:
+                # Fix for PyTorch 2.6+ security check
+                sd = torch.load(swinir_ckpt, map_location='cpu', weights_only=False)
+            except TypeError:
+                sd = torch.load(swinir_ckpt, map_location='cpu')
+            if 'state_dict' in sd:
+                sd = sd['state_dict']
+            self.preprocess_model.load_state_dict(sd, strict=False)
         frozen_module(self.preprocess_model)
         
         # instantiate condition encoder, since our condition encoder has the same 
@@ -402,7 +420,7 @@ class ControlLDM(LatentDiffusion):
         shape = (b, self.channels, h // 8, w // 8)
         samples = sampler.sample(
             steps, shape, cond["c_concat"][0],positive_prompt="", negative_prompt="",
-        cfg_scale=1.0, color_fix_type="wavelet"
+        cfg_scale=1.0, color_fix_type="none"
         )
         return samples
 

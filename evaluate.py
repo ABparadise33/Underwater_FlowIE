@@ -1,226 +1,116 @@
 import numpy as np
-import math
 import os
-import cv2
 import torch
-from torchvision import transforms
-from scipy.ndimage import gaussian_filter
-from lpips_pytorch import LPIPS, lpips
-from skimage.metrics import peak_signal_noise_ratio as psnr
-import pytorch_ssim
 from argparse import ArgumentParser
 from tqdm import tqdm
-import pdb
-
-
 import pyiqa
-# def psnr(img1, img2):
-#     mse = np.mean((img1 - img2) ** 2 )
-#     if mse == 0:
-#         return 100
-#     return 20 * math.log10(255.0 / math.sqrt(mse))
-def calculate_psnr(img1, img2):
-    """Calculate PSNR (Peak Signal-to-Noise Ratio).
-
-    Ref: https://en.wikipedia.org/wiki/Peak_signal-to-noise_ratio
-
-    Args:
-        img1 (ndarray): Images with range [0, 255].
-        img2 (ndarray): Images with range [0, 255].
-        crop_border (int): Cropped pixels in each edge of an image. These
-            pixels are not involved in the PSNR calculation.
-        input_order (str): Whether the input order is 'HWC' or 'CHW'.
-            Default: 'HWC'.
-        test_y_channel (bool): Test on Y channel of YCbCr. Default: False.
-
-    Returns:
-        float: psnr result.
-    """
-
-    assert img1.shape == img2.shape, (f'Image shapes are differnet: {img1.shape}, {img2.shape}.')
-    img1 = img1.astype(np.float64)
-    img2 = img2.astype(np.float64)
-    mse = np.mean((img1 - img2)**2)
-    if mse == 0:
-        return float('inf')
-    
-    #pdb.set_trace()
-    return 10. * np.log10(255.*255.0 /mse)
-
-def _ssim(img1, img2):
-    """Calculate SSIM (structural similarity) for one channel images.
-
-    It is called by func:`calculate_ssim`.
-
-    Args:
-        img1 (ndarray): Images with range [0, 255] with order 'HWC'.
-        img2 (ndarray): Images with range [0, 255] with order 'HWC'.
-
-    Returns:
-        float: ssim result.
-    """
-
-    C1 = (0.01 * 255)**2
-    C2 = (0.03 * 255)**2
-
-    img1 = img1.astype(np.float64)
-    img2 = img2.astype(np.float64)
-    kernel = cv2.getGaussianKernel(11, 1.5)
-    window = np.outer(kernel, kernel.transpose())
-
-    mu1 = cv2.filter2D(img1, -1, window)[5:-5, 5:-5]
-    mu2 = cv2.filter2D(img2, -1, window)[5:-5, 5:-5]
-    mu1_sq = mu1**2
-    mu2_sq = mu2**2
-    mu1_mu2 = mu1 * mu2
-    sigma1_sq = cv2.filter2D(img1**2, -1, window)[5:-5, 5:-5] - mu1_sq
-    sigma2_sq = cv2.filter2D(img2**2, -1, window)[5:-5, 5:-5] - mu2_sq
-    sigma12 = cv2.filter2D(img1 * img2, -1, window)[5:-5, 5:-5] - mu1_mu2
-
-    ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
-    return ssim_map.mean()
-def calculate_ssim(img1, img2):
-    """Calculate SSIM (structural similarity).
-
-    Ref:
-    Image quality assessment: From error visibility to structural similarity
-
-    The results are the same as that of the official released MATLAB code in
-    https://ece.uwaterloo.ca/~z70wang/research/ssim/.
-
-    For three-channel images, SSIM is calculated for each channel and then
-    averaged.
-
-    Args:
-        img1 (ndarray): Images with range [0, 255].
-        img2 (ndarray): Images with range [0, 255].
-        crop_border (int): Cropped pixels in each edge of an image. These
-            pixels are not involved in the SSIM calculation.
-        input_order (str): Whether the input order is 'HWC' or 'CHW'.
-            Default: 'HWC'.
-        test_y_channel (bool): Test on Y channel of YCbCr. Default: False.
-
-    Returns:
-        float: ssim result.
-    """
-
-    assert img1.shape == img2.shape, (f'Image shapes are differnet: {img1.shape}, {img2.shape}.')
- 
-    img1 = img1.astype(np.float64)
-    img2 = img2.astype(np.float64)
-
-
-    ssims = []
-    for i in range(img1.shape[2]):
-        ssims.append(_ssim(img1[..., i], img2[..., i]))
-    return np.array(ssims).mean()
 
 def main(path1, path2, type="all"):
-    loss_1 = []
-    loss_2 = []
-    loss_3 = [] 
-    loss_4 = []
-    length = 0
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    print(f"Using device: {device}")
+
+    # 初始化 Metrics
+    metrics = {}
+    if type in ["psnr", "all"]:
+        metrics["psnr"] = pyiqa.create_metric('psnr', test_y_channel=True, color_space='ycbcr').to(device)
+    if type in ["ssim", "all"]:
+        metrics["ssim"] = pyiqa.create_metric('ssim', test_y_channel=True, color_space='ycbcr').to(device)
+    if type in ["lpips", "all"]:
+        metrics["lpips"] = pyiqa.create_metric('lpips', device=device)
+    if type in ["musiq", "all"]:
+        metrics["musiq"] = pyiqa.create_metric('musiq', device=device)
+
+    # 讀取 Restored (Output) 資料夾的檔案
+    files1 = sorted([f for f in os.listdir(path1) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))])
     
-    if type=="lpips" or type == "all":
-        lpips = LPIPS().cuda()
-    if type=="ssim" or type == "all":
-        ssim = pytorch_ssim.SSIM(window_size = 11).cuda()
+    # 建立 GT 資料夾的索引 (檔名不含副檔名 -> 完整路徑)
+    # 這樣可以忽略 .jpg 和 .png 的差異
+    gt_map = {}
+    for f in os.listdir(path2):
+        if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+            name_no_ext = os.path.splitext(f)[0]
+            gt_map[name_no_ext] = os.path.join(path2, f)
 
-    #iqa_metric = pyiqa.create_metric(type, test_y_channel=False, color_space='ycbcr').cuda()
-    lpips_metric = pyiqa.create_metric('lpips').cuda()
-    ssim_metric = pyiqa.create_metric('ssim').cuda()
-    musiq_metric = pyiqa.create_metric('musiq').cuda()
+    print(f"Restored folder: {len(files1)} images")
+    print(f"GT folder:       {len(gt_map)} images")
 
-    for idx ,img in tqdm(enumerate(os.listdir(path1)),total=len(os.listdir(path1))):
-        imgpath1 = os.path.join(path1,img)
-        imgpath2 = os.path.join(path2,img)
-        imgpath2 = imgpath2[:-3]+'png'
+    scores = {k: [] for k in metrics.keys()}
+    paired_count = 0
+    unpaired_files = []
+
+    print("\n[Pairing Check] First 5 matches:")
+
+    for i, img_name in enumerate(tqdm(files1, desc="Evaluating")):
+        imgpath1 = os.path.join(path1, img_name)
         
-        #print(imgpath1)
-        #img1 = cv2.imread(imgpath1).astype(np.float64)
-      
+        # --- 關鍵修正邏輯 ---
+        # 取得檔名 (不含路徑和副檔名)
+        base_name = os.path.splitext(img_name)[0]
         
-        #img2 = cv2.imread(imgpath2).astype(np.float64)
+        # 如果檔名結尾是 '_0'，就把它切掉！
+        # 例如: '85_img__0' -> '85_img_'
+        if base_name.endswith('_0'):
+            real_name = base_name[:-2]
+        else:
+            real_name = base_name
+            
+        # 去 GT map 找有沒有這個名字
+        imgpath2 = gt_map.get(real_name)
+        
+        has_gt = imgpath2 is not None
 
+        # 顯示前幾個配對結果給您檢查
+        if i < 5:
+            match_str = os.path.basename(imgpath2) if has_gt else "NO MATCH"
+            tqdm.write(f"  {img_name} -> {match_str}")
 
-        # mean_l = []
-        # std_l = []
-        # for j in range(3):
-        #     mean_l.append(np.mean(img2[:, :, j]))
-        #     std_l.append(np.std(img2[:, :, j]))
-        # for j in range(3):
-        #     # correct twice
-        #     mean = np.mean(img1[:, :, j])
-        #     img1[:, :, j] = img1[:, :, j] - mean + mean_l[j]
-        #     std = np.std(img1[:, :, j])
-        #     img1[:, :, j] = img1[:, :, j] / std * std_l[j]
+        if not has_gt:
+            if type != "musiq":
+                unpaired_files.append(img_name)
+                continue
+        else:
+            paired_count += 1
 
-        #     mean = np.mean(img1[:, :, j])
-        #     img1[:, :, j] = img1[:, :, j] - mean + mean_l[j]
-        #     std = np.std(img1[:, :, j])
-        #     img1[:, :, j] = img1[:, :, j] / std * std_l[j]
-        # img1 = cv2.resize(img1,(256,256))
-        # img2 = cv2.resize(img2,(256,256))
-        # if img1.shape != img2.shape:
-        #     if img1.shape[0]< img2.shape[0]:
-        #         img2 = cv2.resize(img2,img1.shape[:2])
-        #     else:
-        #         img1 = cv2.resize(img1,img2.shape[:2])
-        if type=="psnr":
-            psnr_score = iqa_metric(imgpath1,imgpath2)
-            # loss_1 += psnr(img1,img2,data_range=255.0)
-            loss_1.append(psnr_score.cpu().numpy())
-        elif type=="lpips":
-            lpips_score = lpips_metric(imgpath1,imgpath2)
-            loss_2.append(lpips_score.cpu().numpy())
-        elif type=="ssim":
-            ssim_score = ssim_metric(imgpath1,imgpath2)
-            loss_3.append(ssim_score.cpu().numpy())
-        elif type=="musiq":
-            musiq_score = musiq_metric(imgpath1)
-            loss_4.append(musiq_score.cpu().numpy())
-        elif type == "all":
-            loss_1 += psnr(img1,img2)
-            loss_2 += lpips(transforms.ToTensor()(img1).cuda(),transforms.ToTensor()(img2).cuda())
-            loss_3 += ssim(transforms.ToTensor()(img1).unsqueeze(0).cuda(),transforms.ToTensor()(img2).unsqueeze(0).cuda())
-        # loss += criterion(transforms.ToTensor()(img1).cuda(),transforms.ToTensor()(img2).cuda())
-        # loss += criterion(transforms.ToTensor()(img1).unsqueeze(0).cuda(),transforms.ToTensor()(img2).unsqueeze(0).cuda())
-        length +=1
-    if type=="psnr" or type == "all":
-        print("psnr↑",np.mean(loss_1))
-    if type=="lpips" or type == "all":
-        print("lpips↓",np.mean(loss_2))
-    if type=="ssim" or type == "all":
-        print("ssim↑",np.mean(loss_3))
-    if type=="musiq" or type == "all":
-        print("musiq↑",np.mean(loss_4))
+        # 計算指標
+        with torch.no_grad():
+            for name, metric in metrics.items():
+                if name == "musiq":
+                    val = metric(imgpath1).item()
+                    scores[name].append(val)
+                elif has_gt:
+                    val = metric(imgpath1, imgpath2).item()
+                    scores[name].append(val)
 
+    # --- 輸出結果 ---
+    print("\n" + "="*30)
+    print("       EVALUATION REPORT       ")
+    print("="*30)
+    print(f"Total Restored Images: {len(files1)}")
+    print(f"Successfully Paired:   {paired_count}")
+    
+    if unpaired_files:
+        print(f"Unpaired Images:       {len(unpaired_files)}")
+        print("Example unpaired files (could not find GT):")
+        print(unpaired_files[:5])
 
+    print("-" * 30)
+    for name, vals in scores.items():
+        if vals:
+            avg = np.mean(vals)
+            arrow = "↓" if name == "lpips" else "↑"
+            print(f"{name.upper():<6} {arrow} : {avg:.4f}")
+        else:
+            print(f"{name.upper():<6}   : No data")
+    print("="*30)
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--input1", type=str, required=True)
-    parser.add_argument("--input2", type=str, required=True)
-    parser.add_argument("--type", type=str, default="all")
+    parser.add_argument("--input1", type=str, required=True, help="Path to restored images")
+    parser.add_argument("--input2", type=str, required=True, help="Path to GT images")
+    parser.add_argument("--type", type=str, default="all", choices=["psnr", "ssim", "lpips", "musiq", "all"])
     args = parser.parse_args()
-    main(args.input1, args.input2, args.type)
-
-
-'''
-DiffBIR
-psnr↑ 31.14
-lpips↓ 0.2063
-ssim↑ 0.6731
-
-midd
-psnr↑ 30.87
-lpips↓ 0.2046
-ssim↑ 0.6719
-
-final
-psnr↑ 31.17
-lpips↓ 0.2248
-ssim↑ 0.7220
-
-'''
+    
+    if not os.path.exists(args.input1):
+        print(f"Error: Input path {args.input1} does not exist.")
+    else:
+        main(args.input1, args.input2, args.type)

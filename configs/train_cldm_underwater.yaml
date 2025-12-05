@@ -1,0 +1,25 @@
+model:
+  config: ./configs/model/cldm_underwater.yaml
+
+data:
+  target: dataset.data_module.BIRDataModule
+  params:
+    train_config: ./configs/dataset/underwater_train.yaml
+
+lightning:
+  seed: 231
+  
+  callbacks:
+    - target: model.callbacks.ImageLogger
+      params:
+        # 每 500 個 step 存一次圖 (您可以自己調整)
+        log_every_n_steps: 500
+        max_images_each_step: 4
+        # 【關鍵修正】把原本這裡的 clamp: True 拿掉，留空字典即可
+        log_images_kwargs: {}
+
+  trainer:
+    benchmark: True
+    max_epochs: 100
+    accelerator: gpu
+    devices: [0]

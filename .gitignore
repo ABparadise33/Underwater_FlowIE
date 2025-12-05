@@ -1,0 +1,26 @@
+# 忽略權重檔
+weights/
+*.ckpt
+*.pth
+*.safetensors
+
+# 忽略資料集
+datasets/
+data/
+
+# 忽略訓練紀錄與暫存圖
+lightning_logs/
+logs/
+image_log/
+results/
+outputs/
+
+# 忽略 Python 暫存檔
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+venv/
+.env
+
+# 忽略下載失敗的殘留檔
+*.zip

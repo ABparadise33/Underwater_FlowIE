@@ -1,0 +1,106 @@
+target: model.cldm.ControlLDM
+params:
+  sd_locked: True
+  learning_rate: 1e-5
+  linear_start: 0.00085
+  linear_end: 0.0120
+  num_timesteps_cond: 1
+  log_every_t: 200
+  timesteps: 1000
+  first_stage_key: "jpg"
+  cond_stage_key: "txt"
+  control_key: "hint"
+  image_size: 512
+  channels: 4
+  cond_stage_trainable: false
+  conditioning_key: crossattn
+  monitor: val/loss_simple_ema
+  scale_factor: 0.18215
+  use_ema: False
+  only_mid_control: False
+
+  ckpt_path: ./weights/v2-1_512-ema-pruned.ckpt
+
+  control_stage_config:
+    target: model.cldm.ControlNet
+    params:
+      use_checkpoint: True
+      image_size: 32
+      in_channels: 4
+      hint_channels: 4
+      model_channels: 320
+      attention_resolutions: [ 4, 2, 1 ]
+      num_res_blocks: 2
+      channel_mult: [ 1, 2, 4, 4 ]
+      num_heads: 8
+      use_spatial_transformer: True
+      transformer_depth: 1
+      context_dim: 1024
+      legacy: False
+
+  unet_config:
+    target: model.cldm.ControlledUnetModel
+    params:
+      use_checkpoint: True
+      image_size: 32
+      in_channels: 4
+      out_channels: 4
+      model_channels: 320
+      attention_resolutions: [ 4, 2, 1 ]
+      num_res_blocks: 2
+      channel_mult: [ 1, 2, 4, 4 ]
+      num_heads: 8
+      use_spatial_transformer: True
+      transformer_depth: 1
+      context_dim: 1024
+      legacy: False
+
+  first_stage_config:
+    target: ldm.models.autoencoder.AutoencoderKL
+    use_fp16: False
+    params:
+      embed_dim: 4
+      monitor: val/rec_loss
+      ddconfig:
+        double_z: true
+        z_channels: 4
+        resolution: 256
+        in_channels: 3
+        out_ch: 3
+        ch: 128
+        ch_mult:
+        - 1
+        - 2
+        - 4
+        - 4
+        num_res_blocks: 2
+        attn_resolutions: []
+        dropout: 0.0
+      lossconfig:
+        target: torch.nn.Identity
+
+  cond_stage_config:
+    target: ldm.modules.encoders.modules.FrozenOpenCLIPEmbedder
+    params:
+      freeze: True
+      layer: "penultimate"
+
+  preprocess_config:
+    target: model.swinir.SwinIR
+    params:
+      img_size: 64
+      patch_size: 1
+      in_chans: 3
+      embed_dim: 180
+      depths: [6, 6, 6, 6, 6, 6, 6, 6]
+      num_heads: [6, 6, 6, 6, 6, 6, 6, 6]
+      window_size: 8
+      mlp_ratio: 2
+      
+      # 【關鍵修正】
+      sf: 1             # 改為 1 (不放大)
+      upsampler: ""     # 改為空字串 (不使用上採樣層)
+      
+      img_range: 1.
+      resi_connection: "1conv"
+      ckpt_path: ./weights/general_swinir_v1.ckpt

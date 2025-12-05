@@ -1,3 +1,4 @@
+import os
 from typing import Sequence, Dict, Union
 import math
 import time
@@ -1258,3 +1259,88 @@ class CodeformerDataset_Dehaze(data.Dataset):
 
     def __len__(self) -> int:
         return len(self.hq_paths)
+
+# ---------------------------------------------------------
+# 請將以下程式碼貼到 dataset/codeformer.py 的最尾端
+# ---------------------------------------------------------
+class CodeformerDataset_Underwater(data.Dataset):
+    def __init__(
+        self,
+        root_path: str,
+        lq_folder: str = 'underwater',
+        hq_folder: str = 'GT',
+        out_size: int = 512,
+        crop_type: str = 'random',
+        use_hflip: bool = True,
+        # 以下參數保留以符合介面，暫時用不到
+        blur_kernel_size=None, kernel_list=None, kernel_prob=None, blur_sigma=None,
+        downsample_range=None, noise_range=None, jpeg_range=None
+    ):
+        super(CodeformerDataset_Underwater, self).__init__()
+        self.root_path = root_path
+        self.lq_folder = lq_folder
+        self.hq_folder = hq_folder
+        self.out_size = out_size
+        self.crop_type = crop_type
+        self.use_hflip = use_hflip
+
+        # 自動搜尋配對影像
+        self.lq_paths = []
+        self.hq_paths = []
+        
+        img_lq_dir = join(root_path, lq_folder)
+        img_hq_dir = join(root_path, hq_folder)
+        
+        print(f"Loading underwater images from: {img_lq_dir}")
+        
+        # 列出所有圖片
+        valid_exts = {'.jpg', '.jpeg', '.png', '.bmp', '.tif'}
+        for file_name in sorted(os.listdir(img_lq_dir)):
+            if os.path.splitext(file_name)[1].lower() in valid_exts:
+                lq_path = join(img_lq_dir, file_name)
+                hq_path = join(img_hq_dir, file_name) # 假設 GT 檔名一樣
+                
+                if isfile(hq_path):
+                    self.lq_paths.append(lq_path)
+                    self.hq_paths.append(hq_path)
+        
+        print(f"Found {len(self.lq_paths)} pairs.")
+
+    def __getitem__(self, index):
+        # 讀取圖片
+        lq_path = self.lq_paths[index]
+        hq_path = self.hq_paths[index]
+        imgname = lq_path.split('/')[-1]
+
+        pil_lq = Image.open(lq_path).convert("RGB")
+        pil_hq = Image.open(hq_path).convert("RGB")
+
+        # 裁切與調整大小
+        if self.crop_type == "random":
+            pil_hq, pil_lq = random_crop_arr(pil_hq, self.out_size, lq_image=pil_lq)
+        elif self.crop_type == "center":
+            pil_hq, pil_lq = center_crop_arr(pil_hq, self.out_size, lq_image=pil_lq)
+        else:
+            # 如果不裁切，強制縮放到 out_size (避免尺寸不合報錯)
+            pil_hq = pil_hq.resize((self.out_size, self.out_size), Image.BICUBIC)
+            pil_lq = pil_lq.resize((self.out_size, self.out_size), Image.BICUBIC)
+
+        img_hq = np.array(pil_hq)
+        img_lq = np.array(pil_lq)
+
+        # 數據增強：水平翻轉
+        if self.use_hflip and np.random.random() < 0.5:
+            img_hq = np.flip(img_hq, axis=1)
+            img_lq = np.flip(img_lq, axis=1)
+
+        # 正規化與格式轉換
+        # GT (Target): 範圍 [-1, 1]
+        target = (img_hq / 127.5 - 1.0).astype(np.float32)
+        
+        # LQ (Input/Hint): 範圍 [0, 1]
+        source = (img_lq / 255.0).astype(np.float32)
+
+        return dict(jpg=target, txt="", hint=source, imgname=imgname)
+
+    def __len__(self):
+        return len(self.lq_paths)

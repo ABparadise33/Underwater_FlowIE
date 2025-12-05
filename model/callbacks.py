@@ -64,10 +64,14 @@ class ImageLogger(Callback):
                 # chw -> hwc (hw if gray)
                 grid = grid.transpose(0, 1).transpose(1, 2).squeeze(-1).numpy()
                 grid = (grid * 255).clip(0, 255).astype(np.uint8)
-                filename = "{}_step-{:06}_e-{:06}_b-{:06}.png".format(
-                    image_key, pl_module.global_step, pl_module.current_epoch, batch_idx
+                # Modified: Save to subfolders by type
+                type_dir = os.path.join(save_dir, image_key)
+                os.makedirs(type_dir, exist_ok=True)
+                
+                filename = "step-{:06}_e-{:06}_b-{:06}.png".format(
+                    pl_module.global_step, pl_module.current_epoch, batch_idx
                 )
-                path = os.path.join(save_dir, filename)
+                path = os.path.join(type_dir, filename)
                 Image.fromarray(grid).save(path)
             
             if is_train:

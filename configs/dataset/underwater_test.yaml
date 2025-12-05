@@ -1,0 +1,30 @@
+dataset:
+  target: dataset.codeformer.CodeformerDataset_Underwater
+  params:
+    # 修改這裡為你的水下數據集路徑
+    root_path: ./datasets/underwater_test 
+    lq_folder: underwater # 存放水下影像的資料夾名稱
+    hq_folder: GT         # 存放 Ground Truth 的資料夾名稱
+    
+    is_val: True
+    out_size: 512
+    crop_type: center     # 測試時建議使用 center 或 none
+    use_hflip: False
+    
+    # 以下參數需保留以符合程式碼介面，但在測試階段通常不會用到 degradation
+    blur_kernel_size: 41
+    kernel_list: ['iso', 'aniso']
+    kernel_prob: [0.5, 0.5]
+    blur_sigma: [0.1, 12]
+    downsample_range: [1, 12]
+    noise_range: [0, 15]
+    jpeg_range: [30, 100]
+
+data_loader:
+  batch_size: 1      # 測試通常設為 1
+  shuffle: false
+  num_workers: 4
+  drop_last: false
+
+batch_transform:
+  target: dataset.batch_transform.IdentityBatchTransform

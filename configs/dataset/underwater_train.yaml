@@ -1,0 +1,19 @@
+dataset:
+  target: dataset.codeformer.CodeformerDataset_Underwater
+  params:
+    root_path: ./datasets/underwater_train
+    lq_folder: underwater
+    hq_folder: GT
+    out_size: 512
+    crop_type: random
+    use_hflip: True
+
+data_loader:
+  # 【關鍵修正】降為 1 以節省記憶體
+  batch_size: 1
+  shuffle: true
+  num_workers: 8
+  drop_last: true
+
+batch_transform:
+  target: dataset.batch_transform.IdentityBatchTransform
