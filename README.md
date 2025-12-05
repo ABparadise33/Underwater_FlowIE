@@ -20,7 +20,7 @@ conda create -n FlowIE python=3.9
 conda activate FlowIE
 
 # 2. Clone 本專案
-git clone [https://github.com/ABparadise33/Underwater_FlowIE.git](https://github.com/ABparadise33/Underwater_FlowIE.git)
+git clone https://github.com/ABparadise33/Underwater_FlowIE.git
 cd Underwater_FlowIE
 
 # 3. 安裝 Python 依賴套件 (包含 rawpy, accelerate, pyiqa 等所有依賴)
@@ -33,7 +33,7 @@ cd ../..
 
 # 5. [重要] 安裝 lpips-pytorch (需手動修正版本號錯誤)
 # 步驟 3 的 requirements.txt 內建安裝。這裡處理錯誤版本號問題
-git clone [https://github.com/S-aiueo32/lpips-pytorch.git](https://github.com/S-aiueo32/lpips-pytorch.git)
+git clone https://github.com/S-aiueo32/lpips-pytorch.git
 # 使用 sed 修正 setup.py 內的錯誤版本號
 sed -i "s/version='latest'/version='1.0.0'/" lpips-pytorch/setup.py 
 pip install ./lpips-pytorch
