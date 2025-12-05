@@ -1,7 +1,3 @@
-這是一份經過最終校對、整合了所有修正步驟（包含 lpips-pytorch 版本修復、basicsr 相容性修正、資料集 Git 下載流程）的完整 README.md。
-
-您可以直接複製以下內容並覆蓋您專案中的 README 文件：
-
 FlowIE for Underwater Image Enhancement
 此專案基於 FlowIE (CVPR 2024) 進行修改，專門針對 水下影像修復 (Underwater Image Enhancement) 任務進行優化與訓練。
 
